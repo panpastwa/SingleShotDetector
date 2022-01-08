@@ -3,10 +3,12 @@ import torch
 
 class SSD(torch.nn.Module):
 
-    def __init__(self):
+    def __init__(self, num_classes):
         super().__init__()
 
-        self.model = torch.nn.ModuleList([
+        self.num_classes = num_classes
+
+        self.module_list = torch.nn.ModuleList([
 
             # VGG to Conv4_3
             torch.nn.Sequential(
@@ -97,13 +99,77 @@ class SSD(torch.nn.Module):
             )
         ])
 
-    def debug_shape(self, x):
-        for block in self.model:
-            x = block(x)
-            print(x.shape)
+        # Convolutional classifiers that map features to detections
+        self.classifiers = torch.nn.ModuleList([
+
+            torch.nn.Sequential(
+                torch.nn.Conv2d(512, 4 * (self.num_classes+4), kernel_size=3, padding=1),
+                torch.nn.ReLU(),
+            ),
+
+            torch.nn.Sequential(
+                torch.nn.Conv2d(1024, 6 * (self.num_classes + 4), kernel_size=3, padding=1),
+                torch.nn.ReLU(),
+            ),
+
+            torch.nn.Sequential(
+                torch.nn.Conv2d(512, 6 * (self.num_classes + 4), kernel_size=3, padding=1),
+                torch.nn.ReLU(),
+            ),
+
+            torch.nn.Sequential(
+                torch.nn.Conv2d(256, 6 * (self.num_classes + 4), kernel_size=3, padding=1),
+                torch.nn.ReLU(),
+            ),
+
+            torch.nn.Sequential(
+                torch.nn.Conv2d(256, 4 * (self.num_classes + 4), kernel_size=3, padding=1),
+                torch.nn.ReLU(),
+            ),
+
+            torch.nn.Sequential(
+                torch.nn.Conv2d(256, 4 * (self.num_classes + 4), kernel_size=3, padding=1),
+                torch.nn.ReLU(),
+            ),
+        ])
+
+    def reshape_detections(self, detections):
+        """
+        Reshape classifier output to standard detection shape
+        :param detections: Tensor contatining output from classifier in shape [batch_size, K*(num_classes+4), N, N]
+        :return: Tensor containing reshaped detections in shape [batch_size, num_detections, num_classes+4]
+        """
+
+        batch_size, K, H, W = detections.shape
+        K = K // (self.num_classes+4)
+
+        # As we expect input as images in shape (300, 300), we expect H == W
+        assert H == W
+
+        # Split second dimension to K*(num_classes+4)
+        detections = detections.view(batch_size, K, self.num_classes+4, H, W)
+
+        # Change order in detections tensor
+        detections = detections.permute(0, 3, 4, 1, 2)
+
+        # Reshape detections to desired shape (batch_size, num_detections, num_classes+4)
+        detections = detections.reshape(batch_size, K*H*W, self.num_classes+4)
+
+        return detections
 
     def forward(self, x):
 
-        for block in self.model:
-            x = block(x)
-        return x
+        features = x
+        output = []
+
+        for feature_extractor, classifier in zip(self.module_list, self.classifiers):
+
+            features = feature_extractor(features)
+            detections = classifier(features)
+            detections = self.reshape_detections(detections)
+
+            output.append(detections)
+
+        # Merge tensors together and return detections
+        output = torch.cat(output, dim=1)
+        return output

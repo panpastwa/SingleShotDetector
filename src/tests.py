@@ -5,7 +5,7 @@ from model import SSD
 
 
 device = 'cuda'
-ssd = SSD()
+ssd = SSD(num_classes=91)
 ssd.to(device)
 print(ssd)
 x = torch.rand((2, 3, 300, 300)).to(device)
