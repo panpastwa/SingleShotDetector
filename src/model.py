@@ -1,4 +1,4 @@
-from torchvision.ops import box_iou, box_convert
+from torchvision.ops import box_iou, box_convert, nms
 import torch
 
 from anchors import Anchors
@@ -272,6 +272,41 @@ class SSD(torch.nn.Module):
         loss /= batch_size
         return loss
 
+    def prepare_output(self, detections, max_detections=10):
+
+        # Filter boxes with low confidence score
+        scores = detections[:, :, 4:]
+        scores = scores.softmax(dim=-1)
+        best_scores_values, best_scores_indices = torch.max(scores[:, :, 1:], dim=-1)
+        score_mask = best_scores_values > 0.01
+
+        output = []
+
+        for i, detection in enumerate(detections):
+
+            mask = score_mask[i]
+
+            # Get scores
+            score = best_scores_values[i, mask]
+            class_ids = best_scores_indices[i, mask]
+
+            boxes = self.anchors.default_boxes_cxcywh.to(detections.device)
+            boxes = boxes[mask]
+            detection = detection[mask]
+
+            # Add offsets to default boxes
+            boxes += detection[:, :4]
+            boxes = box_convert(boxes, "cxcywh", "xyxy")
+            boxes = torch.clip(boxes, 0.0, 1.0)
+            best_boxes = nms(boxes, score, iou_threshold=0.45)
+
+            # Leave only N boxes
+            best_boxes = best_boxes[:max_detections]
+
+            output.append({"scores": score[best_boxes], "class_ids": class_ids[best_boxes], "boxes": boxes[best_boxes]})
+
+        return output
+
     def forward(self, x, target=None):
 
         if len(x.shape) != 4 or x.shape[1] != 3 or x.shape[2] != 300 or x.shape[3] != 300:
@@ -305,5 +340,5 @@ class SSD(torch.nn.Module):
             return loss
 
         else:
-            # todo: process detections using nms and extract boxes and scores
-            return detections
+            output = self.prepare_output(detections)
+            return output

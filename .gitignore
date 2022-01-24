@@ -1,4 +1,5 @@
 .idea/
 env/
 __pycache__/
-src/weights
+weights/
+outputs/
