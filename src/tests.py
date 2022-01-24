@@ -1,38 +1,45 @@
 from torchvision.transforms import ToPILImage
+from torch.utils.data import DataLoader
 import torch
 import time
 
 from model import SSD
 from dataset import CocoDataset, PascalVOCDataset
-from utils import save_image_with_boxes
+from utils import save_image_with_boxes, collate_fn
 
-root = "/media/panpastwa/Vincent/val2017"
-annotations_file = "/home/panpastwa/Downloads/instances_val2017.json"
-dataset = CocoDataset(root, annotations_file)
-image, target = dataset[0]
-boxes = target["boxes"]
-image = ToPILImage()(image)
-save_image_with_boxes(image, "image1.png", boxes)
+# root = "/media/panpastwa/Vincent/val2017"
+# annotations_file = "/home/panpastwa/Downloads/instances_val2017.json"
+# dataset = CocoDataset(root, annotations_file)
+# image, target = dataset[0]
+# boxes = target["boxes"]
+# image = ToPILImage()(image)
+# save_image_with_boxes(image, "image1.png", boxes)
 
 root = "/media/panpastwa/Vincent/PascalVOC"
 dataset = PascalVOCDataset(root)
 image, target = dataset[0]
-boxes = target["boxes"]
-image = ToPILImage()(image)
-save_image_with_boxes(image, "image2.png", boxes)
+# boxes = target["boxes"]
+# image = ToPILImage()(image)
+# save_image_with_boxes(image, "image2.png", boxes)
 
+
+dataloader = DataLoader(dataset, batch_size=16, num_workers=2, collate_fn=collate_fn)
 
 device = 'cuda'
 ssd = SSD(num_classes=91)
 ssd.to(device)
-ssd.eval()
-x = torch.rand((1, 3, 300, 300)).to(device)
 
 # Warm-up
-ssd(x)
+for i, (images, targets) in enumerate(dataloader):
+    images = images.to(device)
+    ssd(images.to(device), targets)
+    if i == 3:
+        break
 
-start = time.time()
-output = ssd(x)
-end = time.time()
-print(f"Inference time: {(end-start)*1000:.3f} ms.")
-print(output.shape)
+for images, targets in dataloader:
+    images = images.to(device)
+    start = time.time()
+    ssd(images.to(device), targets)
+    end = time.time()
+    print(f"Inference time per image ({device}) : {(end-start)*1000/images.shape[0]:.3f} ms.")
+    break

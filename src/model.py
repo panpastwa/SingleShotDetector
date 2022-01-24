@@ -1,3 +1,4 @@
+from torchvision.ops import box_iou
 import torch
 
 from anchors import Anchors
@@ -169,10 +170,58 @@ class SSD(torch.nn.Module):
 
         return detections
 
+    def match_ground_truth_to_anchors(self, target):
+
+        matches = []
+        for target in target:
+
+            class_ids, ground_truth_boxes = target["class_ids"], target["boxes"]
+            anchors = self.anchors.default_boxes
+            classes_ids, anchors_ids = [], []
+
+            ious = box_iou(ground_truth_boxes, anchors)
+
+            # Get anchors of highest IoU with given ground truth box
+            filtered_anchor_ids = torch.argmax(ious, dim=1)
+            classes_ids.extend(class_ids)
+            anchors_ids.extend(filtered_anchor_ids)
+
+            # Filter anchors of IoU > 0.5 with ground truth boxes
+            mask = ious > 0.5
+            mask = torch.nonzero(mask)
+
+            # Remove duplicate pairs, that were added in step above
+            indices = torch.arange(filtered_anchor_ids.shape[0])
+            avoid_duplicates_mask = torch.stack([indices, filtered_anchor_ids], dim=1)
+            remove_mask = torch.zeros(mask.shape[0], dtype=torch.bool)
+            for pair in avoid_duplicates_mask:
+                remove_mask |= (mask == pair).all(dim=1)
+            mask = mask[~remove_mask]
+
+            # Add matches for IoU > 0.5
+            acceptable_class_ids = class_ids[mask[:, 0]]
+            classes_ids.extend(acceptable_class_ids)
+            anchors_ids.extend(mask[:, 1])
+
+            # Convert to tensor
+            classes_ids = torch.tensor(classes_ids, dtype=torch.long)
+            anchors_ids = torch.tensor(anchors_ids, dtype=torch.long)
+
+            matches.append({"classes_ids": classes_ids, "anchors_ids": anchors_ids})
+
+        return matches
+
     def forward(self, x, target=None):
+
+        if len(x.shape) != 4 or x.shape[1] != 3 or x.shape[2] != 300 or x.shape[3] != 300:
+            raise ValueError("Input should have shape [BATCH_SIZE, 3, 300, 300]")
 
         if self.training and target is None:
             raise ValueError("Target is required during training")
+
+        if self.training and x.shape[0] != len(target):
+            raise ValueError(f"Target should have same number of items as in batch "
+                             f"(batch size: {x.shape[0]}, target size: {len(target)}")
 
         features = x
         output = []
@@ -186,5 +235,9 @@ class SSD(torch.nn.Module):
             output.append(detections)
 
         # Merge tensors together and return detections
-        output = torch.cat(output, dim=1)
-        return output
+        detections = torch.cat(output, dim=1)
+
+        if self.training:
+            matches = self.match_ground_truth_to_anchors(target)
+
+        return detections

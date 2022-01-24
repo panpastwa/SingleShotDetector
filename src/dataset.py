@@ -1,5 +1,5 @@
 from torchvision.datasets import CocoDetection, VOCDetection
-from torchvision.transforms import Compose, Resize, PILToTensor
+from torchvision.transforms import Compose, Resize, PILToTensor, ConvertImageDtype
 from torch.utils.data import Dataset
 import torch
 
@@ -8,7 +8,7 @@ class CocoDataset(Dataset):
 
     def __init__(self, root: str, annotations_file: str):
         self.dataset = CocoDetection(root, annotations_file)
-        self.transforms = Compose([Resize((300, 300)), PILToTensor()])
+        self.transforms = Compose([Resize((300, 300)), PILToTensor(), ConvertImageDtype(torch.float)])
 
     def __getitem__(self, item):
         image, target = self.dataset[item]
@@ -45,7 +45,7 @@ class PascalVOCDataset(Dataset):
 
     def __init__(self, root: str, image_set: str = "train", download: bool = False):
         self.dataset = VOCDetection(root, image_set=image_set, download=download)
-        self.transforms = Compose([Resize((300, 300)), PILToTensor()])
+        self.transforms = Compose([Resize((300, 300)), PILToTensor(), ConvertImageDtype(torch.float)])
         classes = ["background", "aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat",
                    "chair", "cow", "diningtable", "dog", "horse", "motorbike", "person", "pottedplant",
                    "sheep", "sofa", "train", "tvmonitor"]

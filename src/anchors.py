@@ -1,9 +1,10 @@
+from torchvision.ops import box_convert, clip_boxes_to_image
 import torch
 
 
 class Anchors:
 
-    def __init__(self, feature_map_sizes=None, scales=None, aspect_ratios=None):
+    def __init__(self, img_size=(300, 300), feature_map_sizes=None, scales=None, aspect_ratios=None):
 
         if feature_map_sizes is None:
             # Default SSD feature map sizes
@@ -45,12 +46,17 @@ class Anchors:
                                      for k in self.feature_map_sizes
                                      for j in range(k) for i in range(k)
                                      for _ in range(self.feature_map_sizes.shape[0])])
+        self.centers *= torch.tensor(img_size)
 
         # Tensor containing width and height for each default box
-        self.hw_grid = torch.tensor([(w, h)
+        feature_map_grid_sizes = 300 / self.feature_map_sizes
+        self.hw_grid = torch.tensor([(w*feature_map_grid_sizes[i], h*feature_map_grid_sizes[i])
                                      for i, k in enumerate(self.feature_map_sizes)
                                      for _ in range(k*k)
                                      for w, h in self.hw_pairs[i]])
 
         # Grid of default boxes
-        self.grid = torch.stack([self.centers, self.hw_grid], dim=1).reshape((-1, 4))
+        self.default_boxes = torch.stack([self.centers, self.hw_grid], dim=1).reshape((-1, 4))
+        self.default_boxes = box_convert(self.default_boxes, "cxcywh", "xyxy")
+        self.default_boxes = clip_boxes_to_image(self.default_boxes, (img_size[1], img_size[0]))
+        self.default_boxes /= torch.tensor([img_size[0], img_size[1], img_size[0], img_size[1]])

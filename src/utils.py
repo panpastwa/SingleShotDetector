@@ -1,4 +1,11 @@
 from PIL import Image, ImageDraw
+import torch
+
+
+def collate_fn(data):
+    images = torch.cat([d[0].unsqueeze(dim=0) for d in data])
+    targets = [d[1] for d in data]
+    return images, targets
 
 
 def save_image_with_boxes(image: Image, save_path: str, boxes):
