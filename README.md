@@ -8,8 +8,8 @@ _Work in progress_
 - [x] Create base architecture for feature extraction
 - [x] Create classifiers and merge detections from multiple scales to one tensor
 - [x] Create anchors
-- [ ] Implement loss function
-- [ ] Create training loop
+- [x] Implement loss function
+- [x] Create training loop
 - [ ] Train model on datasets used in paper and compare results
 ---
 

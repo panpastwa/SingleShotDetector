@@ -16,6 +16,9 @@ class SSD(torch.nn.Module):
         else:
             self.anchors = anchors
 
+        self.smooth_l1_loss = torch.nn.SmoothL1Loss(reduction="sum")
+        self.cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction="none")
+
         self.module_list = torch.nn.ModuleList([
 
             # VGG to Conv4_3
@@ -234,9 +237,39 @@ class SSD(torch.nn.Module):
 
         return target_offsets
 
-    def calculate_loss(self, detections, matches, offsets):
-        loss = None
-        # todo: implement
+    def calculate_loss(self, detections, matches, offsets, alpha=1.0):
+
+        loss = torch.tensor(0.0, device=detections.device)
+        batch_size = detections.shape[0]
+
+        for detections, matches, offsets in zip(detections, matches, offsets):
+
+            positive_ids = matches["anchors_ids"]
+            class_ids = matches["class_ids"]
+
+            positives_detections = detections[positive_ids]
+            detection_offsets = positives_detections[:, :4]
+
+            localization_loss = self.smooth_l1_loss(detection_offsets, offsets.to(detection_offsets.device))
+
+            class_targets = torch.full((detections.shape[0], ), fill_value=0, dtype=torch.long)
+            class_targets[positive_ids] = class_ids
+
+            confidence_loss = self.cross_entropy_loss(detections[:, 4:], class_targets.to(detections.device))
+
+            mask = torch.ones_like(confidence_loss, dtype=torch.bool)
+            mask[positive_ids] = False
+
+            # Hard negative mining
+            negatives = confidence_loss[mask]
+            highest_confidence_negatives_ids = torch.argsort(negatives)
+            highest_confidence_negatives_ids = highest_confidence_negatives_ids[:3*positive_ids.shape[0]]
+            highest_confidence_negatives = negatives[highest_confidence_negatives_ids]
+            confidence_loss = confidence_loss[positive_ids].sum() + highest_confidence_negatives.sum()
+
+            loss += 1/positive_ids.shape[0] * (confidence_loss + alpha*localization_loss)
+
+        loss /= batch_size
         return loss
 
     def forward(self, x, target=None):

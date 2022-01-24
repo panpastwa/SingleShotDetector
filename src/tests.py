@@ -26,20 +26,20 @@ image, target = dataset[0]
 dataloader = DataLoader(dataset, batch_size=16, num_workers=2, collate_fn=collate_fn)
 
 device = 'cuda'
-ssd = SSD(num_classes=91)
+ssd = SSD(num_classes=21)
 ssd.to(device)
 
 # Warm-up
 for i, (images, targets) in enumerate(dataloader):
     images = images.to(device)
-    ssd(images.to(device), targets)
+    ssd(images, targets)
     if i == 3:
         break
 
 for images, targets in dataloader:
     images = images.to(device)
     start = time.time()
-    ssd(images.to(device), targets)
+    ssd(images, targets)
     end = time.time()
     print(f"Inference time per image ({device}) : {(end-start)*1000/images.shape[0]:.3f} ms.")
     break
