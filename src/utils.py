@@ -12,6 +12,9 @@ def save_image_with_boxes(image: Image, save_path: str, boxes):
 
     image_with_boxes = image.copy()
     draw = ImageDraw.Draw(image_with_boxes)
-    for bbox in boxes:
-        draw.rectangle(bbox)
+    new_boxes = boxes.clone()
+    new_boxes[:, (0, 2)] *= image.width
+    new_boxes[:, (1, 3)] *= image.height
+    for bbox in new_boxes:
+        draw.rectangle(bbox.tolist())
     image_with_boxes.save(save_path)
