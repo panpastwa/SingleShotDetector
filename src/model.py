@@ -1,12 +1,19 @@
 import torch
 
+from anchors import Anchors
+
 
 class SSD(torch.nn.Module):
 
-    def __init__(self, num_classes):
+    def __init__(self, num_classes, anchors: Anchors = None):
         super().__init__()
 
         self.num_classes = num_classes
+
+        if anchors is None:
+            self.anchors = Anchors()
+        else:
+            self.anchors = anchors
 
         self.module_list = torch.nn.ModuleList([
 
@@ -102,8 +109,11 @@ class SSD(torch.nn.Module):
         # Convolutional classifiers that map features to detections
         self.classifiers = torch.nn.ModuleList([
 
+            # Temporary changing shape of classifiers for convinient anchor testing
+
             torch.nn.Sequential(
-                torch.nn.Conv2d(512, 4 * (self.num_classes+4), kernel_size=3, padding=1),
+                # torch.nn.Conv2d(512, 4 * (self.num_classes+4), kernel_size=3, padding=1),
+                torch.nn.Conv2d(512, 6 * (self.num_classes+4), kernel_size=3, padding=1),
                 torch.nn.ReLU(),
             ),
 
@@ -123,12 +133,14 @@ class SSD(torch.nn.Module):
             ),
 
             torch.nn.Sequential(
-                torch.nn.Conv2d(256, 4 * (self.num_classes + 4), kernel_size=3, padding=1),
+                # torch.nn.Conv2d(256, 4 * (self.num_classes + 4), kernel_size=3, padding=1),
+                torch.nn.Conv2d(256, 6 * (self.num_classes + 4), kernel_size=3, padding=1),
                 torch.nn.ReLU(),
             ),
 
             torch.nn.Sequential(
-                torch.nn.Conv2d(256, 4 * (self.num_classes + 4), kernel_size=3, padding=1),
+                # torch.nn.Conv2d(256, 4 * (self.num_classes + 4), kernel_size=3, padding=1),
+                torch.nn.Conv2d(256, 6 * (self.num_classes + 4), kernel_size=3, padding=1),
                 torch.nn.ReLU(),
             ),
         ])
@@ -157,7 +169,10 @@ class SSD(torch.nn.Module):
 
         return detections
 
-    def forward(self, x):
+    def forward(self, x, target=None):
+
+        if self.training and target is None:
+            raise ValueError("Target is required during training")
 
         features = x
         output = []
