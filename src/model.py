@@ -1,4 +1,4 @@
-from torchvision.ops import box_iou
+from torchvision.ops import box_iou, box_convert
 import torch
 
 from anchors import Anchors
@@ -176,22 +176,23 @@ class SSD(torch.nn.Module):
         for target in target:
 
             class_ids, ground_truth_boxes = target["class_ids"], target["boxes"]
-            anchors = self.anchors.default_boxes
-            classes_ids, anchors_ids = [], []
+            anchors = self.anchors.default_boxes_xyxy
+            classes_ids, anchors_ids, gt_bbox_ids = [], [], []
 
             ious = box_iou(ground_truth_boxes, anchors)
 
             # Get anchors of highest IoU with given ground truth box
             filtered_anchor_ids = torch.argmax(ious, dim=1)
+            indices = torch.arange(filtered_anchor_ids.shape[0])
             classes_ids.extend(class_ids)
             anchors_ids.extend(filtered_anchor_ids)
+            gt_bbox_ids.extend(indices)
 
             # Filter anchors of IoU > 0.5 with ground truth boxes
             mask = ious > 0.5
             mask = torch.nonzero(mask)
 
             # Remove duplicate pairs, that were added in step above
-            indices = torch.arange(filtered_anchor_ids.shape[0])
             avoid_duplicates_mask = torch.stack([indices, filtered_anchor_ids], dim=1)
             remove_mask = torch.zeros(mask.shape[0], dtype=torch.bool)
             for pair in avoid_duplicates_mask:
@@ -202,14 +203,41 @@ class SSD(torch.nn.Module):
             acceptable_class_ids = class_ids[mask[:, 0]]
             classes_ids.extend(acceptable_class_ids)
             anchors_ids.extend(mask[:, 1])
+            gt_bbox_ids.extend(mask[:, 0])
 
             # Convert to tensor
             classes_ids = torch.tensor(classes_ids, dtype=torch.long)
             anchors_ids = torch.tensor(anchors_ids, dtype=torch.long)
+            gt_bbox_ids = torch.tensor(gt_bbox_ids, dtype=torch.long)
 
-            matches.append({"classes_ids": classes_ids, "anchors_ids": anchors_ids})
+            matches.append({"class_ids": classes_ids,
+                            "anchors_ids": anchors_ids,
+                            "gt_bbox_ids": gt_bbox_ids})
 
         return matches
+
+    def regress_offsets(self, matches, target):
+
+        target_offsets = []
+        for matches_dict, target_dict in zip(matches, target):
+
+            ground_truth_boxes = box_convert(target_dict["boxes"], "xyxy", "cxcywh")
+            gt_bbox_ids = matches_dict["gt_bbox_ids"]
+            ground_truth_boxes = ground_truth_boxes[gt_bbox_ids]
+
+            anchor_ids = matches_dict["anchors_ids"]
+            default_boxes = self.anchors.default_boxes_cxcywh[anchor_ids]
+            diffs = torch.empty_like(ground_truth_boxes)
+            diffs[:, :2] = (ground_truth_boxes[:, :2] - default_boxes[:, :2]) / default_boxes[:, 2:]
+            diffs[:, 2:] = torch.log(ground_truth_boxes[:, 2:] / default_boxes[:, 2:])
+            target_offsets.append(diffs)
+
+        return target_offsets
+
+    def calculate_loss(self, detections, matches, offsets):
+        loss = None
+        # todo: implement
+        return loss
 
     def forward(self, x, target=None):
 
@@ -239,5 +267,10 @@ class SSD(torch.nn.Module):
 
         if self.training:
             matches = self.match_ground_truth_to_anchors(target)
+            offsets = self.regress_offsets(matches, target)
+            loss = self.calculate_loss(detections, matches, offsets)
+            return loss
 
-        return detections
+        else:
+            # todo: process detections using nms and extract boxes and scores
+            return detections

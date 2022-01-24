@@ -60,3 +60,7 @@ class Anchors:
         self.default_boxes = box_convert(self.default_boxes, "cxcywh", "xyxy")
         self.default_boxes = clip_boxes_to_image(self.default_boxes, (img_size[1], img_size[0]))
         self.default_boxes /= torch.tensor([img_size[0], img_size[1], img_size[0], img_size[1]])
+
+        # Prepare two formats
+        self.default_boxes_xyxy = self.default_boxes
+        self.default_boxes_cxcywh = box_convert(self.default_boxes_xyxy, "xyxy", "cxcywh")
