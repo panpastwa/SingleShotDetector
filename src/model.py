@@ -248,24 +248,39 @@ class SSD(torch.nn.Module):
             class_ids = matches["class_ids"]
 
             positives_detections = detections[positive_ids]
+
             detection_offsets = positives_detections[:, :4]
+            class_score_logits = detections[:, 4:]
+
+            # Debug prints
+            # class_probs = class_score_logits.softmax(dim=-1)
+            # background_detections = (class_probs[:, 0] > 0.5).count_nonzero()
+            # class_detections = (class_probs[:, 1:] > 0.5).count_nonzero()
+            # print(f"Number of detections: {detections.shape[0]}")
+            # print(f"Number of background detections: {background_detections.item()}")
+            # print(f"Number of class detections: {class_detections.item()}")
+            # print(f"Best score: {class_probs.max().item():.3f}")
 
             localization_loss = self.smooth_l1_loss(detection_offsets, offsets.to(detection_offsets.device))
 
-            class_targets = torch.full((detections.shape[0], ), fill_value=0, dtype=torch.long)
+            class_targets = torch.zeros(detections.shape[0], dtype=torch.long)
             class_targets[positive_ids] = class_ids
 
-            confidence_loss = self.cross_entropy_loss(detections[:, 4:], class_targets.to(detections.device))
+            confidence_loss = self.cross_entropy_loss(class_score_logits, class_targets.to(detections.device))
 
             mask = torch.ones_like(confidence_loss, dtype=torch.bool)
             mask[positive_ids] = False
 
             # Hard negative mining
             negatives = confidence_loss[mask]
-            highest_confidence_negatives_ids = torch.argsort(negatives)
-            highest_confidence_negatives_ids = highest_confidence_negatives_ids[:3*positive_ids.shape[0]]
+            highest_confidence_negatives_ids = torch.argsort(negatives, descending=True)
+            highest_confidence_negatives_ids = highest_confidence_negatives_ids[:3*positive_ids.shape[0]]  # neg:pos 3:1
             highest_confidence_negatives = negatives[highest_confidence_negatives_ids]
+            # print(f"Confidence loss (pos): {confidence_loss[positive_ids].sum():5.2f} | "
+            #       f"Confidence loss (neg): {highest_confidence_negatives.sum():5.2f}")
+
             confidence_loss = confidence_loss[positive_ids].sum() + highest_confidence_negatives.sum()
+            # print(f"Localization loss: {localization_loss:5.2f} | Confidence loss: {confidence_loss:5.2f}")
 
             loss += 1/positive_ids.shape[0] * (confidence_loss + alpha*localization_loss)
 
@@ -284,18 +299,23 @@ class SSD(torch.nn.Module):
 
         for i, detection in enumerate(detections):
 
+            print(f"Number of filtered boxes (confidence < 0.01): {(~score_mask[i]).count_nonzero()}")
+
             mask = score_mask[i]
 
             # Get scores
             score = best_scores_values[i, mask]
-            class_ids = best_scores_indices[i, mask]
+            class_ids = best_scores_indices[i, mask] + 1  # Adding one because we omit background class
 
             boxes = self.anchors.default_boxes_cxcywh.to(detections.device)
             boxes = boxes[mask]
             detection = detection[mask]
 
             # Add offsets to default boxes
-            boxes += detection[:, :4]
+            # boxes += detection[:, :4]
+            boxes[:, :2] += detection[:, :2]*boxes[:, 2:]
+            boxes[:, 2:] *= torch.exp(detection[:, 2:4])
+
             boxes = box_convert(boxes, "cxcywh", "xyxy")
             boxes = torch.clip(boxes, 0.0, 1.0)
             best_boxes = nms(boxes, score, iou_threshold=0.45)
@@ -317,7 +337,7 @@ class SSD(torch.nn.Module):
 
         if self.training and x.shape[0] != len(target):
             raise ValueError(f"Target should have same number of items as in batch "
-                             f"(batch size: {x.shape[0]}, target size: {len(target)}")
+                             f"(batch size: {x.shape[0]}, target size: {len(target)})")
 
         features = x
         output = []

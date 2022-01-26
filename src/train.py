@@ -16,7 +16,6 @@ dataloader = DataLoader(dataset, batch_size=8, num_workers=4, shuffle=True, coll
 num_classes = len(dataset.classes)
 ssd = SSD(num_classes=num_classes)
 ssd.to(DEVICE)
-ssd.load_state_dict(torch.load("../weights/weights"))
 
 optimizer = torch.optim.SGD(params=ssd.parameters(), lr=0.001)
 
@@ -31,7 +30,7 @@ for epoch in range(5):
         iterator.set_description(f"Loss: {loss:.2f}")
         losses.append(loss)
 
-    torch.save(ssd.state_dict(), f"weights{epoch+2}")
+    torch.save(ssd.state_dict(), f"../weights/weights{epoch+1}")
     losses = torch.tensor(losses).cpu()
     plt.plot(losses)
     plt.xlabel("Iteration")
