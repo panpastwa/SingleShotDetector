@@ -150,10 +150,11 @@ class SSD(torch.nn.Module):
         ])
 
         # Xavier init
-        for module in (self.module_list, self.classifiers):
-            for layer in module:
-                if isinstance(layer, torch.nn.Conv2d):
-                    torch.nn.init.xavier_uniform_(layer.weight)
+        for module_list in (self.module_list, self.classifiers):
+            for module in module_list:
+                for layer in module:
+                    if isinstance(layer, torch.nn.Conv2d):
+                        torch.nn.init.xavier_uniform_(layer.weight)
 
     def reshape_detections(self, detections):
         """
